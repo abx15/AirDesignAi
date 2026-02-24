@@ -97,3 +97,5 @@ Support the project development via [Sponsors](.github/FUNDING.yml).
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 - Update: feat: implement basic math operations
+
+- Update: style: format code according to project standards
