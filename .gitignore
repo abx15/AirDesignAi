@@ -46,3 +46,4 @@ kubeconfig
 # feat: implement graph plotting functionality
 # style: apply consistent indentation
 # chore: setup CI/CD pipeline
+# docs: update changelog with new features
