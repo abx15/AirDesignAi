@@ -107,3 +107,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: test: increase test coverage to 85%
 
 - Update: fix: resolve memory leak in calculations
+
+- Update: refactor: optimize database queries
