@@ -119,3 +119,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: docs: add troubleshooting section
 
 - Update: test: fix failing tests in production
+
+- Update: fix: resolve CORS issues
