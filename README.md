@@ -103,3 +103,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: chore: update dependencies to latest versions
 
 - Update: docs: add installation guide
+
+- Update: test: increase test coverage to 85%
