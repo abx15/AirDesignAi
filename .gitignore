@@ -45,3 +45,4 @@ kubeconfig
 # refactor: extract common utilities to separate module
 # feat: implement graph plotting functionality
 # style: apply consistent indentation
+# chore: setup CI/CD pipeline
