@@ -49,3 +49,4 @@ kubeconfig
 # docs: update changelog with new features
 # test: add performance benchmarks
 # fix: resolve responsive design issues
+# refactor: consolidate duplicate code
