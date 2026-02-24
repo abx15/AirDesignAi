@@ -51,3 +51,4 @@ kubeconfig
 # fix: resolve responsive design issues
 # refactor: consolidate duplicate code
 # feat: add dark mode support
+# style: improve code readability
