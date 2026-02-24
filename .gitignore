@@ -48,3 +48,4 @@ kubeconfig
 # chore: setup CI/CD pipeline
 # docs: update changelog with new features
 # test: add performance benchmarks
+# fix: resolve responsive design issues
