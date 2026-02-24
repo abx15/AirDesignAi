@@ -44,3 +44,4 @@ kubeconfig
 # fix: handle edge cases in square root function
 # refactor: extract common utilities to separate module
 # feat: implement graph plotting functionality
+# style: apply consistent indentation
