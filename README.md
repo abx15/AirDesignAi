@@ -95,3 +95,5 @@ Support the project development via [Sponsors](.github/FUNDING.yml).
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+- Update: feat: implement basic math operations
