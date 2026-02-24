@@ -52,3 +52,4 @@ kubeconfig
 # refactor: consolidate duplicate code
 # feat: add dark mode support
 # style: improve code readability
+# chore: update project metadata
