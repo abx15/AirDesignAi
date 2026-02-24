@@ -101,3 +101,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: style: format code according to project standards
 
 - Update: chore: update dependencies to latest versions
+
+- Update: docs: add installation guide
