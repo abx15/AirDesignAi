@@ -99,3 +99,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: feat: implement basic math operations
 
 - Update: style: format code according to project standards
+
+- Update: chore: update dependencies to latest versions
