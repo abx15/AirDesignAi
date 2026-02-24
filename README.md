@@ -113,3 +113,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: feat: add support for mathematical expressions
 
 - Update: style: remove unused imports and variables
+
+- Update: chore: upgrade React to latest version
