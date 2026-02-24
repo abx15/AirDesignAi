@@ -109,3 +109,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: fix: resolve memory leak in calculations
 
 - Update: refactor: optimize database queries
+
+- Update: feat: add support for mathematical expressions
