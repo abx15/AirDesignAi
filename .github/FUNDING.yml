@@ -1,0 +1,9 @@
+# This is the configuration for GitHub Sponsors.
+# See https://docs.github.com/en/sponsors/receiving-sponsorships-through-github-sponsors/setting-up-github-sponsors-for-your-user-account-or-organization for more information.
+
+# Sponsors can be enabled for a user or an organization.
+# This example uses a fictional placeholder.
+github: [abx15]
+patreon: motionmath
+ko_fi: motionmath
+custom: ["https://motionmath.ai/donate"]

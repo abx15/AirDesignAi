@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: motionmath-config
+  namespace: motionmath-prod
+data:
+  NEXT_PUBLIC_API_URL: "https://api.motionmath.ai"
+  REDIS_URL: "redis://redis-service:6379/0"
+  LOG_LEVEL: "info"
