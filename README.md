@@ -117,3 +117,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: chore: upgrade React to latest version
 
 - Update: docs: add troubleshooting section
+
+- Update: test: fix failing tests in production
