@@ -111,3 +111,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Update: refactor: optimize database queries
 
 - Update: feat: add support for mathematical expressions
+
+- Update: style: remove unused imports and variables
