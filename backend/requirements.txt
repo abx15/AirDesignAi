@@ -9,7 +9,7 @@ sympy==1.12
 httpx==0.28.1
 Pillow==10.3.0
 python-dotenv==1.0.1
-numpy==1.26.4
+numpy==2.4.2
 pydantic[email]==2.9.2
 slowapi==0.1.9
 redis==5.0.8
