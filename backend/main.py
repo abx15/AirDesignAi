@@ -38,6 +38,10 @@ app.include_router(auth.router)
 app.include_router(equations.router)
 app.include_router(solve.router)
 
+# Collaboration Sockets
+from services.collaboration import socket_app
+app.mount("/ws", socket_app)
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
