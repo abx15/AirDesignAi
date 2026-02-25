@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: motionmath-prod
+  labels:
+    name: motionmath-prod
+    environment: production
+    project: motionmath
+  annotations:
+    iam.amazonaws.com/permitted: "motionmath-*"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: motionmath-network-policy
+  namespace: motionmath-prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app: frontend
+    - podSelector:
+        matchLabels:
+          app: backend
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 6379
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: backend
+    - podSelector:
+        matchLabels:
+          app: frontend
+    - podSelector:
+        matchLabels:
+          app: redis
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: motionmath-quota
+  namespace: motionmath-prod
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "10"
+    pods: "100"
+    services: "20"
+    secrets: "20"
+    configmaps: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: motionmath-limits
+  namespace: motionmath-prod
+spec:
+  limits:
+  - default:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    type: Container
+  - max:
+      cpu: "2"
+      memory: "2Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+    type: Container
+  - max:
+      storage: 10Gi
+    min:
+      storage: 1Gi
+    type: PersistentVolumeClaim

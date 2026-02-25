@@ -1,0 +1,17 @@
+#!/bin/bash
+# Pre-commit hook for Husky
+# This script runs pre-commit checks before commits
+
+echo "🔍 Running pre-commit checks..."
+
+# Run pre-commit hooks
+pre-commit run --all-files
+
+# Check if pre-commit passed
+if [ $? -ne 0 ]; then
+    echo "❌ Pre-commit checks failed. Please fix the issues and try again."
+    exit 1
+fi
+
+echo "✅ Pre-commit checks passed!"
+exit 0

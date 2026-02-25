@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Test Database
+  test-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_motionmath
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_motionmath"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Test Redis
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test-network
+
+  # Backend Test Runner
+  test-runner:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+      target: runtime
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://test_user:test_password@test-db:5432/test_motionmath
+      - REDIS_URL=redis://test-redis:6379/0
+      - TESTING=true
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      test-db:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    command: pytest --cov=. --cov-report=xml --cov-report=html -v
+    networks:
+      - test-network
+
+  # Frontend Test Runner
+  test-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      target: builder
+    environment:
+      - NODE_ENV=test
+      - NEXT_PUBLIC_API_URL=http://test-runner:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules/.cache
+    command: npm test -- --coverage --watchAll=false
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

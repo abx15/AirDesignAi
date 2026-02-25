@@ -1,0 +1,325 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: motionmath-prod
+  labels:
+    app: celery-worker
+    version: v1
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: celery-worker
+          image: ghcr.io/motionmath/motionmath-backend:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=4", "--max-tasks-per-child=1000"]
+          envFrom:
+            - configMapRef:
+                name: motionmath-config
+            - secretRef:
+                name: motionmath-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CELERY_WORKER_LOGLEVEL
+              value: "INFO"
+            - name: CELERY_WORKER_CONCURRENCY
+              value: "4"
+            - name: CELERY_WORKER_MAX_TASKS_PER_CHILD
+              value: "1000"
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+              ephemeral-storage: "1Gi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1001
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - celery-worker
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - compute
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: motionmath-prod
+  labels:
+    app: celery-beat
+    version: v1
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: celery-beat
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: celery-beat
+          image: ghcr.io/motionmath/motionmath-backend:latest
+          imagePullPolicy: Always
+          command: ["celery", "-A", "celery_app", "beat", "--loglevel=info", "--pidfile=/tmp/celerybeat.pid"]
+          envFrom:
+            - configMapRef:
+                name: motionmath-config
+            - secretRef:
+                name: motionmath-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CELERY_BEAT_LOGLEVEL
+              value: "INFO"
+            - name: CELERY_BEAT_SCHEDULE_FILENAME
+              value: "/tmp/celerybeat-schedule"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+              ephemeral-storage: "1Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+              ephemeral-storage: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - celery_app
+                - inspect
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1001
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+            - name: celerybeat-data
+              mountPath: /tmp/celerybeat-data
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+        - name: celerybeat-data
+          persistentVolumeClaim:
+            claimName: celerybeat-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-worker-service
+  namespace: motionmath-prod
+  labels:
+    app: celery-worker
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: celery-worker
+    version: v1
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-beat-service
+  namespace: motionmath-prod
+  labels:
+    app: celery-beat
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: celery-beat
+    version: v1
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: celery-service-account
+  namespace: motionmath-prod
+  annotations:
+    iam.amazonaws.com/role: "motionmath-celery-role"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-worker-pdb
+  namespace: motionmath-prod
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: celerybeat-pvc
+  namespace: motionmath-prod
+  labels:
+    app: celery-beat
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: "fast-ssd"

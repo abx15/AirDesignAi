@@ -1,0 +1,13 @@
+# GitHub Sponsors Configuration
+# This file enables GitHub Sponsors for your repository
+
+github: [abx15]
+patreon: your-patreon-username
+open_collective: your-open-collective-slug
+ko_fi: your-kofi-name
+tidelift: npm/your-package-name
+community_bridge: your-project-name
+liberapay: your-liberapay-username
+issuehunt: your-username-here
+otechie: your-username-here
+custom: ['https://your-custom-donation-link.com']

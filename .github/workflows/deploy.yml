@@ -1,27 +1,203 @@
-name: Deployment
+name: 🚀 Enterprise Deployment Pipeline
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: motionmath-backend
+  FRONTEND_IMAGE_NAME: motionmath-frontend
 
 jobs:
   deploy-frontend:
+    name: 🎨 Deploy Frontend
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.url }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel (Staging)
+        if: github.event.inputs.environment == 'staging' || github.ref == 'refs/heads/main'
+        uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
           working-directory: ./frontend
-          vercel-args: "--prod"
+
+      - name: Deploy to Vercel (Production)
+        if: github.event.inputs.environment == 'production'
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./frontend
+        env:
+          VERCEL_ENV: production
+
+      - name: Get deployment URL
+        id: deploy
+        run: |
+          if [ "${{ github.event.inputs.environment || 'staging' }}" = "production" ]; then
+            echo "url=https://motionmath.ai" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging.motionmath.ai" >> $GITHUB_OUTPUT
+          fi
 
   deploy-backend:
+    name: 🐍 Deploy Backend
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    needs: deploy-frontend
     steps:
-      - name: Trigger Render Deploy
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Render
+        if: github.event.inputs.environment == 'staging' || github.ref == 'refs/heads/main'
+        uses: johnbeynon/render-deploy-action@v0.0.8
+        with:
+          service-id: ${{ secrets.RENDER_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}
+          wait-for-success: true
+
+      - name: Deploy to Railway (Production)
+        if: github.event.inputs.environment == 'production'
+        uses: railway-app/railway-action@v1
+        with:
+          api-token: ${{ secrets.RAILWAY_TOKEN }}
+          project: ${{ secrets.RAILWAY_PROJECT }}
+          environment: production
+
+      - name: Deploy to Kubernetes
+        if: github.event.inputs.environment == 'production'
         run: |
-          curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          echo "🚀 Deploying to Kubernetes cluster..."
+          # Set up kubectl
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          
+          # Update image tags in deployment manifests
+          sed -i "s|image: .*backend.*|image: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest|g" infrastructure/kubernetes/backend-deployment.yaml
+          sed -i "s|image: .*frontend.*|image: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest|g" infrastructure/kubernetes/frontend-deployment.yaml
+          
+          # Apply manifests
+          kubectl apply -f infrastructure/kubernetes/
+          kubectl rollout status deployment/motionmath-backend
+          kubectl rollout status deployment/motionmath-frontend
+
+  health-check:
+    name: 🏥 Health Check
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend]
+    steps:
+      - name: Wait for deployment
+        run: sleep 60
+
+      - name: Check frontend health
+        run: |
+          FRONTEND_URL="${{ needs.deploy-frontend.outputs.deployment-url }}"
+          curl -f --retry 3 --retry-delay 10 "$FRONTEND_URL" || exit 1
+
+      - name: Check backend health
+        run: |
+          BACKEND_URL="${{ needs.deploy-frontend.outputs.deployment-url }}/api/health"
+          curl -f --retry 3 --retry-delay 10 "$BACKEND_URL" || exit 1
+
+      - name: Run smoke tests
+        run: |
+          FRONTEND_URL="${{ needs.deploy-frontend.outputs.deployment-url }}"
+          BACKEND_URL="${{ needs.deploy-frontend.outputs.deployment-url }}/api"
+          
+          # Test API endpoints
+          curl -f "$BACKEND_URL/health" || exit 1
+          curl -f "$BACKEND_URL/docs" || exit 1
+          
+          # Test frontend loads
+          curl -f "$FRONTEND_URL" | grep -q "MotionMath" || exit 1
+
+  notify-slack:
+    name: 📢 Notify Slack
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend, health-check]
+    if: always()
+    steps:
+      - name: Notify deployment success
+        if: needs.health-check.result == 'success'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#deployments'
+          text: |
+            🚀 Deployment to ${{ github.event.inputs.environment || 'staging' }} completed successfully!
+            Frontend: ${{ needs.deploy-frontend.outputs.deployment-url }}
+            Commit: ${{ github.sha }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: needs.health-check.result == 'failure'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#deployments'
+          text: |
+            ❌ Deployment to ${{ github.event.inputs.environment || 'staging' }} failed!
+            Please check the logs and investigate.
+            Commit: ${{ github.sha }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  performance-test:
+    name: ⚡ Performance Test
+    runs-on: ubuntu-latest
+    needs: [health-check]
+    if: github.event.inputs.environment == 'production'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run performance tests
+        env:
+          TARGET_URL: ${{ needs.deploy-frontend.outputs.deployment-url }}
+        run: |
+          k6 run --out json=performance-results.json tests/performance/load-test.js
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results
+          path: performance-results.json
+
+      - name: Alert on performance degradation
+        run: |
+          # Parse performance results and alert if metrics degrade
+          if grep -q '"error_rate": [1-9]' performance-results.json; then
+            echo "❌ Performance degradation detected!"
+            exit 1
+          fi

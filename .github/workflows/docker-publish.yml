@@ -1,58 +1,272 @@
-name: Docker Build & Publish
+name: 🐳 Enterprise Docker Build & Publish
 
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main, develop, 'release/*']
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  BACKEND_IMAGE_NAME: motionmath-backend
+  FRONTEND_IMAGE_NAME: motionmath-frontend
 
 jobs:
-  build-and-push:
+  detect-changes:
+    name: 🔍 Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      dockerfile-changed: ${{ steps.changes.outputs.dockerfile }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for file changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'requirements.txt'
+            frontend:
+              - 'frontend/**'
+              - 'package.json'
+              - 'package-lock.json'
+            dockerfile:
+              - 'Dockerfile*'
+              - 'docker-compose.yml'
+              - '.dockerignore'
+
+  build-backend:
+    name: 🐍 Build Backend Image
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend-changed == 'true' || needs.detect-changes.outputs.dockerfile-changed == 'true' || github.event_name == 'push'
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Log in to the Container registry
-        uses: actions/login-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Backend
+      - name: Extract metadata
         id: meta-backend
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ github.sha }}
+            type=ref,event=pr,suffix=-pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=develop,enable={{is_default_branch}}
 
-      - name: Build and push Backend
-        uses: docker/build-push-action@v4
+      - name: Build and test backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          push: false
+          load: true
+          tags: test-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run backend container tests
+        run: |
+          docker run --rm -d --name test-backend test-backend:latest
+          sleep 10
+          docker exec test-backend curl -f http://localhost:8000/health || exit 1
+          docker stop test-backend
+
+      - name: Build and push backend image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
 
-      - name: Extract metadata (tags, labels) for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v4
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          image: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${{ steps.meta-backend.outputs.version }}
+          format: spdx-json
+          output-file: backend-sbom.spdx
 
-      - name: Build and push Frontend
-        uses: docker/build-push-action@v4
+      - name: Upload SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-sbom
+          path: backend-sbom.spdx
+
+  build-frontend:
+    name: ⚛️ Build Frontend Image
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend-changed == 'true' || needs.detect-changes.outputs.dockerfile-changed == 'true' || github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ github.sha }}
+            type=ref,event=pr,suffix=-pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=develop,enable={{is_default_branch}}
+
+      - name: Build and test frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          push: false
+          load: true
+          tags: test-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run frontend container tests
+        run: |
+          docker run --rm -d --name test-frontend test-frontend:latest
+          sleep 10
+          docker exec test-frontend curl -f http://localhost:3000 || exit 1
+          docker stop test-frontend
+
+      - name: Build and push frontend image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.meta-frontend.outputs.version }}
+          format: spdx-json
+          output-file: frontend-sbom.spdx
+
+      - name: Upload SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-sbom
+          path: frontend-sbom.spdx
+
+  security-scan:
+    name: 🔒 Container Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+          format: 'sarif'
+          output: 'backend-trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'backend-trivy-results.sarif'
+
+      - name: Run Trivy on frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+          format: 'sarif'
+          output: 'frontend-trivy-results.sarif'
+
+      - name: Upload frontend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'frontend-trivy-results.sarif'
+
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment..."
+          # Add your staging deployment logic here
+
+  deploy-production:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying to production environment..."
+          # Add your production deployment logic here

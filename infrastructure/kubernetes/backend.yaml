@@ -3,56 +3,184 @@ kind: Deployment
 metadata:
   name: backend-deployment
   namespace: motionmath-prod
+  labels:
+    app: backend
+    version: v1
 spec:
-  replicas: 3
+  replicas: 6
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: backend
+      version: v1
   template:
     metadata:
       labels:
         app: backend
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
       containers:
         - name: backend
-          image: ghcr.io/motionmath/backend:latest
+          image: ghcr.io/motionmath/motionmath-backend:latest
+          imagePullPolicy: Always
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: motionmath-config
             - secretRef:
                 name: motionmath-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           resources:
             limits:
+              cpu: "1000m"
+              memory: "1Gi"
+              ephemeral-storage: "2Gi"
+            requests:
               cpu: "500m"
               memory: "512Mi"
-            requests:
-              cpu: "250m"
-              memory: "256Mi"
+              ephemeral-storage: "1Gi"
           livenessProbe:
             httpGet:
               path: /health
-              port: 8000
-            initialDelaySeconds: 15
-            periodSeconds: 20
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
           readinessProbe:
             httpGet:
+              path: /ready
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          startupProbe:
+            httpGet:
               path: /health
-              port: 8000
-            initialDelaySeconds: 5
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+            successThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1001
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - compute
+      tolerations:
+        - key: "workload"
+          operator: "Equal"
+          value: "backend"
+          effect: "NoSchedule"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: backend-service
   namespace: motionmath-prod
+  labels:
+    app: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
 spec:
   selector:
     app: backend
+    version: v1
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
       targetPort: 8000
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
   type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-service-account
+  namespace: motionmath-prod
+  annotations:
+    iam.amazonaws.com/role: "motionmath-backend-role"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: motionmath-prod
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: backend

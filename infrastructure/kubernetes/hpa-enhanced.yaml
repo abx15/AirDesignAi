@@ -1,0 +1,170 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: motionmath-prod
+  annotations:
+    autoscaling.alpha.kubernetes.io/behavior: |
+      {
+        "scaleUp": {
+          "stabilizationWindowSeconds": 60,
+          "policies": [
+            {
+              "type": "Percent",
+              "value": 100,
+              "periodSeconds": 15
+            }
+          ]
+        },
+        "scaleDown": {
+          "stabilizationWindowSeconds": 300,
+          "policies": [
+            {
+              "type": "Percent",
+              "value": 10,
+              "periodSeconds": 60
+            }
+          ]
+        }
+      }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-deployment
+  minReplicas: 6
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "100"
+  - type: External
+    external:
+      metric:
+        name: redis_connections
+      target:
+        type: AverageValue
+        averageValue: "50"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: motionmath-prod
+  annotations:
+    autoscaling.alpha.kubernetes.io/behavior: |
+      {
+        "scaleUp": {
+          "stabilizationWindowSeconds": 60,
+          "policies": [
+            {
+              "type": "Percent",
+              "value": 100,
+              "periodSeconds": 15
+            }
+          ]
+        },
+        "scaleDown": {
+          "stabilizationWindowSeconds": 300,
+          "policies": [
+            {
+              "type": "Percent",
+              "value": 10,
+              "periodSeconds": 60
+            }
+          ]
+        }
+      }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend-deployment
+  minReplicas: 4
+  maxReplicas: 30
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "200"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: redis-hpa
+  namespace: motionmath-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: redis-deployment
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb-enhanced
+  namespace: motionmath-prod
+spec:
+  minAvailable: 4
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb-enhanced
+  namespace: motionmath-prod
+spec:
+  minAvailable: 2
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: frontend
